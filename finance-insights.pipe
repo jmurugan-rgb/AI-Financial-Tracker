@@ -1,0 +1,78 @@
+{
+  "description": "Finance tracker insight pipeline: takes a natural-language question, lets a RocketRide Wave agent consult the Neo4j transaction graph and Butterbase, and returns an explained answer.",
+  "version": 1,
+  "source": "source",
+  "components": [
+    {
+      "id": "source",
+      "provider": "webhook",
+      "name": "Ingest question",
+      "config": {}
+    },
+    {
+      "id": "as_question",
+      "provider": "question",
+      "name": "Wrap as question",
+      "config": {},
+      "input": [{ "lane": "text", "from": "source" }]
+    },
+    {
+      "id": "llm_core",
+      "provider": "llm_anthropic",
+      "name": "Claude (reasoning + Cypher generation)",
+      "config": {
+        "profile": "claude-sonnet-4-6",
+        "apikey": "${ANTHROPIC_API_KEY}"
+      }
+    },
+    {
+      "id": "graph",
+      "provider": "db_neo4j",
+      "name": "Finance transaction graph",
+      "config": {
+        "profile": "default",
+        "uri": "${NEO4J_URI}",
+        "auth_method": "userpass",
+        "user": "${NEO4J_USER}",
+        "password": "${NEO4J_PASSWORD}",
+        "database": "neo4j",
+        "db_description": "Personal finance graph. (User)-[:OWNS]->(Account)-[:HAS_TRANSACTION]->(Transaction)-[:AT_MERCHANT]->(Merchant)-[:IN_CATEGORY]->(Category). (Transaction)-[:FOLLOWS {days_between}]->(Transaction) chains consecutive charges at the same merchant to detect recurring billing. (Merchant)-[:SIMILAR_TO {score}]->(Merchant) links merchants that share a category and similar charge amounts, or cluster via node similarity. A merchant with no SIMILAR_TO edges is unusual relative to the rest of the graph.",
+        "allow_execute": false
+      },
+      "control": [{ "classType": "llm", "from": "llm_core" }]
+    },
+    {
+      "id": "butterbase",
+      "provider": "tool_mcp_client",
+      "name": "Butterbase (auth, user profile, payment tier)",
+      "config": {
+        "profile": "Butterbase MCP Client",
+        "serverName": "butterbase",
+        "endpoint": "https://api.butterbase.ai/mcp",
+        "bearer": "${BUTTERBASE_API_KEY}"
+      }
+    },
+    {
+      "id": "agent",
+      "provider": "agent_rocketride",
+      "name": "Finance insight agent",
+      "config": {
+        "profile": "default",
+        "systemPrompt": "You are a finance tracker's insight agent. Use the graph tool to find recurring subscriptions, isolated/anomalous merchants, and merchant clusters with low usage overlap. Use the butterbase tool to check the caller's plan tier before returning deep savings analysis (butterbase.get_user, or equivalent), and to log the generated insight for the user's history. Always explain findings in terms of the graph relationships that produced them (e.g. 'these five merchants are mutually similar and each bills on a ~30 day cycle')."
+      },
+      "input": [{ "lane": "questions", "from": "as_question" }],
+      "control": [
+        { "classType": "llm", "from": "llm_core" },
+        { "classType": "tool", "from": "graph" },
+        { "classType": "tool", "from": "butterbase" }
+      ]
+    },
+    {
+      "id": "out",
+      "provider": "response",
+      "name": "Return insight",
+      "config": {},
+      "input": [{ "lane": "answers", "from": "agent" }]
+    }
+  ]
+}

@@ -1,70 +1,139 @@
-# Neo4j layer — finance tracker
+# RocketRide Cloud pipeline — finance tracker
 
-Graph model + queries behind the three dashboard insights. Run the files in
-this order against a fresh Aura (free tier is fine for the baseline queries)
-or local Neo4j instance.
+This is the piece that ties Neo4j and the LLM together into a production
+endpoint: a natural-language question comes in, an agent consults the
+transaction graph and Butterbase, and an explained answer comes back.
 
-## Setup order
+## How the pieces fit together
 
-```bash
-# 1. Open Neo4j Browser (or cypher-shell) connected to your instance
-# 2. Run each file's contents in order:
-schema.cypher              # constraints + indexes
-seed-data.cypher           # users, accounts, merchants, categories, transactions
-derive-relationships.cypher # FOLLOWS chains + SIMILAR_TO edges
-insight-queries.cypher      # the three queries the dashboard calls
+RocketRide's `db_neo4j` node translates natural language to Cypher and runs
+it — but it's **read-only by design** (it rejects `CREATE`/`MERGE`/`SET`/`DELETE`,
+per RocketRide's own docs). That's exactly what you want for answering
+questions safely, but it means loading data is a separate, deterministic
+step — the same split any real system would use:
+
+```
+ingestion.py  ──writes──▶  Neo4j  ◀──reads (NL → Cypher)──  finance-insights.pipe
+(neo4j driver,                                              (RocketRide Cloud,
+ direct Cypher)                                              deployed pipeline)
 ```
 
-Using `cypher-shell` from the command line instead:
+- **`ingestion.py`** runs the exact Cypher from `../neo4j/*.cypher` directly
+  against Neo4j using the official driver: schema, seed data, and — on every
+  new transaction batch — the `FOLLOWS`/`SIMILAR_TO` derivation queries.
+- **`finance-insights.pipe`** is the RocketRide pipeline: it takes a question,
+  lets a Wave agent query the graph and Butterbase as tools, and returns a
+  graph-grounded answer via Claude.
 
-```bash
-cat schema.cypher seed-data.cypher derive-relationships.cypher | \
-  cypher-shell -a <your-aura-uri> -u neo4j -p <your-password>
-```
-
-## What each file does
+## Files
 
 | File | Role |
 |---|---|
-| `schema.cypher` | Uniqueness constraints on `User`, `Account`, `Transaction`, `Merchant`, `Category` + supporting indexes on date/amount |
-| `seed-data.cypher` | Same sample transactions as the dashboard prototype, so both stay consistent |
-| `derive-relationships.cypher` | Builds `FOLLOWS` chains (consecutive transactions per merchant) and `SIMILAR_TO` edges (shared category + charge-amount closeness). This is the step your RocketRide Cloud pipeline re-runs on every new transaction batch. |
-| `insight-queries.cypher` | The three queries mapped to dashboard cards — recurring detection, anomaly detection, savings via cluster ranking |
+| `finance-insights.pipe` | The pipeline definition — portable JSON, same file runs locally or on Cloud |
+| `ingestion.py` | Writes transactions + derives `FOLLOWS`/`SIMILAR_TO`, run via the Neo4j driver |
+| `client_example.py` | Calls the deployed pipeline from Python using the RocketRide SDK |
 
-## How each insight actually uses the graph
+## What's in the pipeline
 
-**Recurring cluster detected** — walks `FOLLOWS` edges per merchant and flags
-ones where the interval between charges barely varies (low standard
-deviation). This is a graph traversal, not a `GROUP BY` — it has to walk the
-chain to compute the interval sequence.
+```
+webhook (source)
+  └─▶ question (wraps text as a Question)
+        └─▶ agent (RocketRide Wave) ──tools──▶ db_neo4j (graph, read-only NL→Cypher)
+              │                     └────────▶ tool_mcp_client (Butterbase preset)
+              └─llm──▶ llm_anthropic (Claude Sonnet 4.6)
+                    └─▶ response (returns the answer)
+```
 
-**Anomaly flagged** — a transaction counts as anomalous only when *both* are
-true: its merchant has zero `SIMILAR_TO` neighbors (nothing like it exists in
-the graph), and its amount is a statistical outlier against the user's own
-history. Neither signal alone is enough; the graph structure is what makes it
-trustworthy instead of a blunt "large charge" rule.
+- **`graph`** (`db_neo4j`): connects to your Neo4j instance, reflects the
+  schema at startup, and exposes `get_data` / `get_schema` / `get_cypher` as
+  agent tools. The `db_description` field tells the LLM what `FOLLOWS` and
+  `SIMILAR_TO` mean so it generates Cypher that actually uses them, rather
+  than treating the graph as a flat table.
+- **`butterbase`** (`tool_mcp_client`, Butterbase preset): connects to
+  `https://api.butterbase.ai/mcp` and exposes Butterbase's backend tools —
+  auth, user profile, payment tier — so the agent can gate deep insights
+  behind your paid tier and log generated insights to the user's history.
+- **`agent`** (`agent_rocketride`, RocketRide's native Wave agent): the
+  orchestrator. Its system prompt tells it to explain findings in terms of
+  the graph relationships that produced them — the whole point of this
+  build.
 
-**Savings opportunity** — ranks merchants inside a `SIMILAR_TO` cluster by
-actual usage and surfaces the lowest-value ones. The baseline query assumes
-same-category-implies-same-cluster, which works for this seed data. The
-commented GDS Louvain query at the bottom of `insight-queries.cypher` is the
-real version — once you have merchants that don't cluster neatly by category
-label (e.g. two different genres of app that a user happens to use together),
-Louvain finds the cluster from edge weights instead of you hardcoding it.
+## Local development
+
+1. Install the RocketRide VS Code extension and start a local engine (see
+   [self-hosting docs](https://docs.rocketride.org/self-hosting)), or run:
+   ```bash
+   docker pull ghcr.io/rocketride-org/rocketride-engine:latest
+   docker create --name rocketride-engine -p 5565:5565 ghcr.io/rocketride-org/rocketride-engine:latest
+   docker start rocketride-engine
+   ```
+2. Seed Neo4j (see `../neo4j/README.md` for setup), then run ingestion:
+   ```bash
+   pip install neo4j
+   export NEO4J_URI="neo4j+s://<your-aura-uri>"
+   export NEO4J_USER="neo4j"
+   export NEO4J_PASSWORD="<your-password>"
+   python ingestion.py --seed
+   ```
+3. Open `finance-insights.pipe` in the RocketRide VS Code extension's canvas,
+   fill in the node configs (or rely on the `${ENV_VAR}` substitutions below),
+   and run it from the canvas or:
+   ```bash
+   rocketride start finance-insights.pipe
+   ```
+4. Test it:
+   ```bash
+   curl -X POST http://localhost:5567/task/data \
+     -H "Authorization: Bearer <printed-auth-key>" \
+     -H "Content-Type: text/plain" \
+     -d "What subscriptions look recurring?"
+   ```
+
+## Environment variables the pipeline needs
+
+| Variable | Used by |
+|---|---|
+| `ANTHROPIC_API_KEY` | `llm_core` (Claude Sonnet 4.6) |
+| `NEO4J_URI`, `NEO4J_USER`, `NEO4J_PASSWORD` | `graph` (Neo4j Bolt connection — use `neo4j+s://` for Aura) |
+| `BUTTERBASE_API_KEY` | `butterbase` (Butterbase API key, `bb_sk_...`, from the Butterbase dashboard → API Keys; requires Developer Mode enabled on your Butterbase app) |
+
+RocketRide substitutes `${VAR_NAME}` from the engine's environment when the
+pipeline starts — set these wherever the engine runs (local `.env`, or your
+RocketRide Cloud project's environment settings).
+
+## Deploying to RocketRide Cloud
+
+```bash
+export ROCKETRIDE_URI=https://api.rocketride.ai
+export ROCKETRIDE_APIKEY=<your-rocketride-api-token>
+rocketride deploy finance-insights.pipe --schedule manual
+```
+
+Or one-click deploy from the VS Code extension's canvas (the same `.pipe`
+JSON runs unchanged against Cloud or a self-hosted engine — no rewrite
+needed). Once deployed, point `client_example.py` at it:
+
+```bash
+pip install rocketride
+export ROCKETRIDE_URI=https://cloud.rocketride.ai
+export ROCKETRIDE_APIKEY=<your-rocketride-api-token>
+python client_example.py
+```
+
+For scheduled re-ingestion (e.g. pulling new transactions every 15 minutes)
+you'd deploy a second, separate pipeline that does the ingestion step, or
+run `ingestion.py` as a cron job / scheduled function next to wherever your
+transaction feed lands — the Neo4j writes don't go through RocketRide's
+read-only graph node, by design.
 
 ## Judging note
 
-The GDS (Graph Data Science) library queries are commented out because they
-require either a self-managed Neo4j instance with the GDS plugin installed,
-or AuraDS — not the plain Aura free tier. The baseline queries work on free
-tier and already satisfy the "traverse relationships, don't just use it as a
-key-value store" requirement. Uncomment and use the GDS versions if your
-instance supports them — it strengthens the submission.
-
-## Next step
-
-Wire `derive-relationships.cypher` into the RocketRide Cloud pipeline so it
-runs automatically after each transaction ingestion batch, and have
-`insight-queries.cypher` called from the pipeline's insight-generation step
-(feeding results to the LLM call via Butterbase's AI gateway for the
-natural-language summary).
+Every node provider referenced here (`webhook`, `question`, `llm_anthropic`,
+`db_neo4j`, `tool_mcp_client` with the Butterbase preset, `agent_rocketride`,
+`response`) is a real, documented RocketRide node as of this build — checked
+against docs.rocketride.org rather than assumed. The one thing worth
+double-checking against the live VS Code canvas before you demo: the exact
+config schema for `agent_rocketride` (the Wave agent), since its field list
+wasn't in the page this pipeline was built against — the `systemPrompt` field
+here is a reasonable guess and may need a small adjustment in the canvas
+editor.

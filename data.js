@@ -1,0 +1,31 @@
+export const seedAccounts = [
+  { id: "acct_checking", name: "Checking", type: "checking", balance: 4218.42 },
+  { id: "acct_credit", name: "Credit Card", type: "credit", balance: -1362.17 },
+  { id: "acct_savings", name: "Savings", type: "savings", balance: 12500.0 },
+];
+
+export const seedTransactions = [
+  { id: "tx_1", date: "2026-07-05", merchant: "Netflix", category: "Streaming", amount: 15.49, accountId: "acct_credit" },
+  { id: "tx_2", date: "2026-06-05", merchant: "Netflix", category: "Streaming", amount: 15.49, accountId: "acct_credit" },
+  { id: "tx_3", date: "2026-05-05", merchant: "Netflix", category: "Streaming", amount: 15.49, accountId: "acct_credit" },
+  { id: "tx_4", date: "2026-07-02", merchant: "Spotify", category: "Streaming", amount: 11.99, accountId: "acct_credit" },
+  { id: "tx_5", date: "2026-06-02", merchant: "Spotify", category: "Streaming", amount: 11.99, accountId: "acct_credit" },
+  { id: "tx_6", date: "2026-05-02", merchant: "Spotify", category: "Streaming", amount: 11.99, accountId: "acct_credit" },
+  { id: "tx_7", date: "2026-06-29", merchant: "Hulu", category: "Streaming", amount: 12.99, accountId: "acct_credit" },
+  { id: "tx_8", date: "2026-05-29", merchant: "Hulu", category: "Streaming", amount: 12.99, accountId: "acct_credit" },
+  { id: "tx_9", date: "2026-04-29", merchant: "Hulu", category: "Streaming", amount: 12.99, accountId: "acct_credit" },
+  { id: "tx_10", date: "2026-07-04", merchant: "Disney+", category: "Streaming", amount: 13.99, accountId: "acct_credit" },
+  { id: "tx_11", date: "2026-06-04", merchant: "Disney+", category: "Streaming", amount: 13.99, accountId: "acct_credit" },
+  { id: "tx_12", date: "2026-05-04", merchant: "Disney+", category: "Streaming", amount: 13.99, accountId: "acct_credit" },
+  { id: "tx_13", date: "2026-07-10", merchant: "HBO Max", category: "Streaming", amount: 9.99, accountId: "acct_credit" },
+  { id: "tx_14", date: "2026-06-10", merchant: "HBO Max", category: "Streaming", amount: 9.99, accountId: "acct_credit" },
+  { id: "tx_15", date: "2026-05-10", merchant: "HBO Max", category: "Streaming", amount: 9.99, accountId: "acct_credit" },
+  { id: "tx_16", date: "2026-07-04", merchant: "Whole Foods", category: "Groceries", amount: 86.4, accountId: "acct_checking" },
+  { id: "tx_17", date: "2026-06-28", merchant: "Trader Joe's", category: "Groceries", amount: 54.1, accountId: "acct_checking" },
+  { id: "tx_18", date: "2026-06-30", merchant: "Starbucks", category: "Coffee", amount: 6.75, accountId: "acct_checking" },
+  { id: "tx_19", date: "2026-07-03", merchant: "Shell", category: "Gas", amount: 42, accountId: "acct_credit" },
+  { id: "tx_20", date: "2026-07-01", merchant: "Amazon", category: "Shopping", amount: 128.3, accountId: "acct_credit" },
+  { id: "tx_21", date: "2026-06-20", merchant: "Target", category: "Shopping", amount: 64.2, accountId: "acct_credit" },
+  { id: "tx_22", date: "2026-06-26", merchant: "Delta", category: "Travel", amount: 340, accountId: "acct_credit" },
+  { id: "tx_23", date: "2026-07-05", merchant: "Unfamiliar overseas merchant", category: "Uncategorized", amount: 1240, accountId: "acct_credit" },
+];

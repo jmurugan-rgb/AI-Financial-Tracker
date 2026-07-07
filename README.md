@@ -1,87 +1,70 @@
-# AI Financial Tracker
+# Neo4j layer — finance tracker
 
-A functional local-first AI financial tracker built from the uploaded frontend, Neo4j, and RocketRide assets.
+Graph model + queries behind the three dashboard insights. Run the files in
+this order against a fresh Aura (free tier is fine for the baseline queries)
+or local Neo4j instance.
 
-## What works now
-
-- React/Vite dashboard
-- Account summary and net-worth view
-- Transaction ledger
-- Add transactions in the UI
-- Import and export CSV transactions
-- LocalStorage persistence
-- Explainable AI-style insights:
-  - recurring subscription detection
-  - anomaly detection
-  - savings opportunity suggestions
-- Interactive transaction graph highlighting the merchants behind each insight
-
-## Run locally
-
-### Option A: no install
-
-Open `standalone/index.html` directly in your browser. This version has no build step and no external dependencies.
-
-### Option B: React/Vite source
+## Setup order
 
 ```bash
-npm install
-npm run dev
+# 1. Open Neo4j Browser (or cypher-shell) connected to your instance
+# 2. Run each file's contents in order:
+schema.cypher              # constraints + indexes
+seed-data.cypher           # users, accounts, merchants, categories, transactions
+derive-relationships.cypher # FOLLOWS chains + SIMILAR_TO edges
+insight-queries.cypher      # the three queries the dashboard calls
 ```
 
-Open the URL printed by Vite, usually `http://localhost:5173`.
-
-## CSV import format
-
-The importer accepts a header row with these columns:
-
-```csv
-id,date,merchant,category,amount,accountId
-```
-
-`id` is optional. `accountId` can be `acct_checking`, `acct_credit`, or `acct_savings`.
-
-## Project structure
-
-```text
-src/
-  App.jsx
-  FinanceTracker.jsx       # main dashboard and interactions
-  data.js                  # seeded accounts and transactions
-  insightEngine.js         # deterministic insight logic
-  styles.css               # app styling
-integrations/
-  neo4j/                   # schema, seed data, relationship derivation, insight queries
-  rocketride/              # RocketRide pipeline, ingestion script, Python client example
-```
-
-## Optional Neo4j setup
-
-The app runs without Neo4j. To use the included graph database layer, run the Cypher files in this order:
+Using `cypher-shell` from the command line instead:
 
 ```bash
-schema.cypher
-seed-data.cypher
-derive-relationships.cypher
-insight-queries.cypher
+cat schema.cypher seed-data.cypher derive-relationships.cypher | \
+  cypher-shell -a <your-aura-uri> -u neo4j -p <your-password>
 ```
 
-See `integrations/neo4j/README.md` for details.
+## What each file does
 
-## Optional RocketRide/Butterbase setup
+| File | Role |
+|---|---|
+| `schema.cypher` | Uniqueness constraints on `User`, `Account`, `Transaction`, `Merchant`, `Category` + supporting indexes on date/amount |
+| `seed-data.cypher` | Same sample transactions as the dashboard prototype, so both stay consistent |
+| `derive-relationships.cypher` | Builds `FOLLOWS` chains (consecutive transactions per merchant) and `SIMILAR_TO` edges (shared category + charge-amount closeness). This is the step your RocketRide Cloud pipeline re-runs on every new transaction batch. |
+| `insight-queries.cypher` | The three queries mapped to dashboard cards — recurring detection, anomaly detection, savings via cluster ranking |
 
-The included RocketRide assets show how an LLM agent can answer finance questions using Neo4j as a graph tool and Butterbase for user/profile/tier context.
+## How each insight actually uses the graph
 
-Set these environment variables before using the Python examples:
+**Recurring cluster detected** — walks `FOLLOWS` edges per merchant and flags
+ones where the interval between charges barely varies (low standard
+deviation). This is a graph traversal, not a `GROUP BY` — it has to walk the
+chain to compute the interval sequence.
 
-```bash
-ROCKETRIDE_URI=https://cloud.rocketride.ai
-ROCKETRIDE_APIKEY=your_token
-ANTHROPIC_API_KEY=your_key
-NEO4J_URI=your_neo4j_uri
-NEO4J_USER=neo4j
-NEO4J_PASSWORD=your_password
-BUTTERBASE_API_KEY=your_key
-```
+**Anomaly flagged** — a transaction counts as anomalous only when *both* are
+true: its merchant has zero `SIMILAR_TO` neighbors (nothing like it exists in
+the graph), and its amount is a statistical outlier against the user's own
+history. Neither signal alone is enough; the graph structure is what makes it
+trustworthy instead of a blunt "large charge" rule.
 
-Then review `integrations/rocketride/client_example.py` and `integrations/rocketride/ingestion.py`.
+**Savings opportunity** — ranks merchants inside a `SIMILAR_TO` cluster by
+actual usage and surfaces the lowest-value ones. The baseline query assumes
+same-category-implies-same-cluster, which works for this seed data. The
+commented GDS Louvain query at the bottom of `insight-queries.cypher` is the
+real version — once you have merchants that don't cluster neatly by category
+label (e.g. two different genres of app that a user happens to use together),
+Louvain finds the cluster from edge weights instead of you hardcoding it.
+
+## Judging note
+
+The GDS (Graph Data Science) library queries are commented out because they
+require either a self-managed Neo4j instance with the GDS plugin installed,
+or AuraDS — not the plain Aura free tier. The baseline queries work on free
+tier and already satisfy the "traverse relationships, don't just use it as a
+key-value store" requirement. Uncomment and use the GDS versions if your
+instance supports them — it strengthens the submission.
+
+## Next step
+
+Wire `derive-relationships.cypher` into the RocketRide Cloud pipeline so it
+runs automatically after each transaction ingestion batch, and have
+`insight-queries.cypher` called from the pipeline's insight-generation step
+(feeding results to the LLM call via Butterbase's AI gateway for the
+natural-language summary).

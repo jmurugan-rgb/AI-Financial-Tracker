@@ -1,7 +1,5 @@
 ZEN Money — AI-Powered Personal Finance Tracker
 
-Built at HackWithBay 3.0 (Devnovate, AWS Builder Loft, San Francisco — July 7, 2026).
-
 ZEN Money is a personal finance tracker that helps you understand your spending instead of just staring at numbers. It brings your accounts, budgets, and savings goals into one clean view, with AI-generated insights that turn raw transaction data into plain-English takeaways.
 
 🔗 Live app: https://zen-money-zen.lovable.app/
@@ -11,7 +9,7 @@ Features:
 📊 Live analytics — instant breakdowns of spending by category and trend over time
 🎯 Budgeting — set monthly budgets per category and get warned before overspending
 ✅ Savings goals — track progress toward goals that matter to you
-🤖 AI insights — plain-language summaries of your spending patterns, powered by [Claude / GPT — confirm which]
+🤖 AI insights — plain-language summaries of your spending patterns
 
 Tech Stack
 React
@@ -22,8 +20,11 @@ Supabase (backend / data storage)
 Built with Lovable
 
 About this project
-This was built solo in an 8-hour hackathon. Going in, the plan was to build with tools already familiar to me — Claude, GPT, and Lovable — rather than the sponsor tools showcased at the event (Neo4j, Daytona, Cognee, Opsera). I experimented with a couple of the sponsor integrations during the hackathon but found it too time-constrained to wire them in reliably, so the final shipped app sticks to the stack above.
+Built solo in just 8 hours during HackWithBay 3.0. I focused on shipping a polished product using the tools I was most comfortable with—Lovable, Claude, GPT, React, Supabase, and Butterbase—while exploring several sponsor technologies throughout the event.
+
 
 Author
 Jhanvi Murugan
-LinkedIn
+LinkedIn 
+https://www.linkedin.com/in/jhanvi-murugan/
+
